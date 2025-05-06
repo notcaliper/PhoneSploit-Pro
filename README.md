@@ -13,6 +13,8 @@ An all-in-one hacking tool written in `Python` to remotely exploit Android devic
 ![GitHub Repo stars](https://img.shields.io/github/stars/AzeemIdrisi/PhoneSploit-Pro?style=social)
 ![GitHub forks](https://img.shields.io/github/forks/AzeemIdrisi/PhoneSploit-Pro?style=social)
 
+**Now Compatible with Android 14 and the Latest ADB/Scrcpy Tools!**
+
 </div>
 
 #### Complete Automation to get a Meterpreter session in One Click
@@ -99,6 +101,14 @@ The goal of this project is to make penetration testing and vulnerability assess
 * Record Device Audio
 * Stream Device Audio
 
+## v1.7
+
+* Full compatibility with Android 14 and newer devices
+* Enhanced wireless debugging connection for Android 11+
+* Improved audio streaming and recording with latest scrcpy
+* Updated mirror function with new display options
+* Better SDK method for exploitation on modern Android devices
+
 # Requirements  
 * [`python3`](https://www.python.org/) : Python 3.10 or Newer
 * [`pip`](https://pip.pypa.io/en/stable/installation/) : Package installer for Python
@@ -175,7 +185,13 @@ python phonesploitpro.py
 2. Go to `System` > `Developer options`.
 3. Scroll down and Enable `USB debugging`.
 
-* __Connecting with Computer__
+### For Android 11+ (Wireless Debugging)
+
+1. Open `Settings`.
+2. Go to `System` > `Developer options`.
+3. Enable `Wireless debugging`.
+
+* __Connecting with Computer (Android 10 and below)__
 
 1. Connect your Android device and `adb` host computer to a common Wi-Fi network.
 2. Connect the device to the host computer with a USB cable.
@@ -193,6 +209,23 @@ adb tcpip 5555
 8. Disconnect the USB cable.
 9. Go to `Settings` >  `About Phone` > `Status` > `IP address` and note the phone's `IP Address`.
 10. Run __PhoneSploit Pro__ and select `Connect a device` and enter the target's `IP Address` to connect over Wi-Fi.
+
+* __Connecting with Computer (Android 11 and above)__
+
+1. Connect your Android device and `adb` host computer to a common Wi-Fi network.
+2. Open `Settings` > `System` > `Developer options` > `Wireless debugging`.
+3. Tap on `Pair device with pairing code`.
+4. You'll see a pairing code and port number (typically 37000).
+5. On your computer, open a terminal and run:
+```
+adb pair <DEVICE_IP>:37000
+```
+6. Enter the pairing code shown on your device when prompted.
+7. After successful pairing, run:
+```
+adb connect <DEVICE_IP>:5555
+```
+8. Alternatively, run __PhoneSploit Pro__ and select `Connect a device` and enter the target's `IP Address` to connect over Wi-Fi. The tool will automatically try both standard connection and wireless debugging connection.
 
 
 

